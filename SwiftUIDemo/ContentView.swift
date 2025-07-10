@@ -2,85 +2,104 @@
 //  ContentView.swift
 //  SwiftUIDemo
 //
-//  Created by Himanshu Jogani on 10/07/25.
+//  Created by Himanshu Jogani on 09/07/25.
 //
 
 import SwiftUI
 import CoreData
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
-
+    @StateObject private var viewModel = PasswordViewModel()
+    @State private var showAddSheet = false
+    @State private var selectedEntry: PasswordEntryEntity? = nil
+    
     var body: some View {
         NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
+            ZStack(alignment: .bottomTrailing) {
+                if viewModel.isAuthenticated {
+                    GeometryReader { geometry in
+                        VStack {
+                            if viewModel.entries.isEmpty {
+                                VStack {
+                                    Spacer()
+                                    Text("No saved passwords")
+                                        .foregroundColor(.gray)
+                                    Spacer()
+                                }
+                                .frame(width: geometry.size.width, height: geometry.size.height - 70)
+                            } else {
+                                ScrollView {
+                                    VStack(spacing: 30) {
+                                        ForEach(viewModel.entries) { entry in
+                                            Button(action: {
+                                                selectedEntry = entry
+                                            }) {
+                                                HStack(spacing: 12) {
+                                                    Text(entry.accountType ?? "Unknown")
+                                                        .font(.headline)
+                                                    if let id = entry.id,
+                                                       let password = KeychainHelper.shared.getPassword(for: id) {
+                                                        Text(String(repeating: "*", count: max(password.count, 8)))
+                                                            .font(.subheadline)
+                                                            .foregroundColor(.gray)
+                                                    } else {
+                                                        Text("No password")
+                                                            .font(.subheadline)
+                                                            .foregroundColor(.gray)
+                                                    }
+                                                    
+                                                    Spacer()
+                                                    Image(systemName: "chevron.right")
+                                                        .foregroundColor(.gray)
+                                                }
+                                                .padding()
+                                                .background( RoundedRectangle(cornerRadius: 20)
+                                                    .fill(Color(.white))
+                                                    .shadow(color: .gray.opacity(0.2), radius: 4, x: 0, y: 2))
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                        }
+                                    }
+                                    .padding()
+                                }
+                            }
+                        }
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .navigationTitle("Password Manager")
                     }
-                }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
+                    
+                    Button(action: {
+                        showAddSheet = true
+                    }) {
+                        Image(systemName: "plus")
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.blue)
+                            .clipShape(Rectangle())
+                            .cornerRadius(10)
+                        
                     }
+                    .padding()
+                    .accessibilityIdentifier("AddButton")
+                } else {
+                    Button("Authenticate") {
+                        viewModel.authenticate()
+                    }
+                    .padding()
                 }
             }
-            Text("Select an item")
         }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
+        .sheet(item: $selectedEntry) { entry in
+            PasswordDetailView(entry: entry, viewModel: viewModel)
+                .presentationDetents([.medium])
         }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
+        .sheet(isPresented: $showAddSheet) {
+            AddPasswordView(viewModel: viewModel)
+                .presentationDetents([.medium])
         }
     }
 }
 
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
-
 #Preview {
-    ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+    ContentView()
 }
